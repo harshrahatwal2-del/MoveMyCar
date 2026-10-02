@@ -1,0 +1,16 @@
+{
+  "name": "movemycar-server",
+  "version": "0.1.0",
+  "description": "Backend for MoveMyCar — SQLite database, data survives restarts.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

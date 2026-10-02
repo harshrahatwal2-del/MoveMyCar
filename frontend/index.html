@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>MoveMyCar</title>
+
+  <!-- Google Fonts: Inter (body text), JetBrains Mono (plates/timers), Material Symbols (icons) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@700;800&family=Material+Symbols+Outlined:wght,FILL@400,0..1&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS, loaded from a CDN (no install needed at this stage) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Extends Tailwind with our own brand colors and fonts,
+    // so we can write classes like "bg-teal" or "text-amb-d" below.
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            teal: { DEFAULT: '#0F766E', d: '#115E59', l: '#CCFBF1' },
+            amb:  { DEFAULT: '#F59E0B', d: '#D97706' },
+            ink:  '#0F172A',
+            mute: '#64748B',
+            line: '#E2E8F0',
+            hsrp: '#0038A8'
+          },
+          fontFamily: { sans: ['Inter'], mono: ['JetBrains Mono'] }
+        }
+      }
+    };
+  </script>
+
+  <!-- Our own styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- The current screen's HTML gets inserted here by app.js -->
+  <div id="app" class="max-w-[480px] mx-auto min-h-screen relative pb-28"></div>
+
+  <!-- Bottom tab bar, filled in by app.js -->
+  <nav id="nav"
+       class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white flex justify-around pt-2 pb-[max(8px,env(safe-area-inset-bottom))] rounded-t-3xl"
+       style="box-shadow:0 -4px 20px -2px rgba(15,23,42,.12)"></nav>
+
+  <!-- Small pop-up message, shown/hidden by the toast() function in app.js -->
+  <div id="toast"
+       class="fixed left-1/2 -translate-x-1/2 bottom-28 bg-ink text-white text-sm px-4 py-3 rounded-xl opacity-0 pointer-events-none transition z-50"></div>
+
+  <!-- Our own JavaScript, loaded last so the elements above already exist -->
+  <script src="app.js"></script>
+</body>
+</html>

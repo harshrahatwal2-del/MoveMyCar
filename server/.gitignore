@@ -1,0 +1,5 @@
+node_modules/
+.env
+movemycar.db
+movemycar.db-wal
+movemycar.db-shm
