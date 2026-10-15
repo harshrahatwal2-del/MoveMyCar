@@ -17,7 +17,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000; // hosting sites provide their own port
 
 // Strip spaces and make uppercase, e.g. "ka 01 mj 8821" -> "KA01MJ8821"
 const normalizePlate = p => (p || '').toUpperCase().replace(/\s/g, '');
