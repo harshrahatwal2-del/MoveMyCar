@@ -47,6 +47,13 @@ if (!columns.includes('phone')) {
   console.log('Migrated database: added "phone" column to vehicles.');
 }
 
+/* ---------- Migration: add "seenAt" to alerts (when the owner opened it) ---------- */
+const alertCols = db.prepare("PRAGMA table_info(alerts)").all().map(c => c.name);
+if (!alertCols.includes('seenAt')) {
+  db.exec('ALTER TABLE alerts ADD COLUMN seenAt INTEGER');
+  console.log('Migrated database: added "seenAt" column to alerts.');
+}
+
 /* ---------- Seed a couple of vehicles, only if the table is empty ---------- */
 
 const vehicleCount = db.prepare('SELECT COUNT(*) AS n FROM vehicles').get().n;

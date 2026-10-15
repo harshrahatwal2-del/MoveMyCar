@@ -7,6 +7,8 @@
    =========================================================== */
 
 const express = require('express');
+const path = require('path');
+const os = require('os');
 const cors = require('cors');
 const db = require('./db'); // our database connection, set up in db.js
 const { sendSMS } = require('./notifications'); // real SMS sending, set up in notifications.js
@@ -112,14 +114,28 @@ app.get('/api/alerts/:id', (req, res) => {
 
   const elapsedMs = Date.now() - alert.createdAt;
 
+  // Status now reflects REAL events instead of a timer:
+  //  - delivered: simulated after ~1s (until real SMS exists)
+  //  - seen: the owner actually opened the alert (seenAt is set)
+  //  - owner_responded: the owner actually tapped a reply
   let status = 'sent';
   if (elapsedMs > 1200) status = 'delivered';
-  if (elapsedMs > 2800) status = 'seen';
-  if (elapsedMs > 4800 || alert.ownerReply) status = 'owner_responded';
+  if (alert.seenAt) status = 'seen';
+  if (alert.ownerReply) status = 'owner_responded';
 
   const escalationSecondsLeft = Math.max(0, 255 - Math.floor(elapsedMs / 1000));
 
   res.json({ alert, status, escalationSecondsLeft });
+});
+
+// The owner opened the alert page. Marks it "seen" (only the first time).
+app.post('/api/alerts/:id/seen', (req, res) => {
+  const alert = db.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
+  if (!alert) return res.status(404).json({ error: 'Alert not found.' });
+  if (!alert.seenAt) {
+    db.prepare('UPDATE alerts SET seenAt = ? WHERE id = ?').run(Date.now(), alert.id);
+  }
+  res.json({ alert: db.prepare('SELECT * FROM alerts WHERE id = ?').get(alert.id) });
 });
 
 // The owner replies to an alert.
@@ -135,7 +151,19 @@ app.post('/api/alerts/:id/reply', (req, res) => {
   res.json({ alert: updated });
 });
 
+// Serve the frontend from the same server, so the whole prototype is ONE process:
+// open http://localhost:4000 and everything (pages + API) comes from here.
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
+
 app.listen(PORT, () => {
-  console.log(`MoveMyCar server running at http://localhost:${PORT}`);
-  console.log(`Data is saved in movemycar.db — it will survive a restart now.`);
+  console.log('\nMoveMyCar prototype is running.');
+  console.log(`  On this computer:  http://localhost:${PORT}`);
+
+  // Show the address other devices on the same Wi-Fi (e.g. your phone) can use.
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const i of list) {
+      if (i.family === 'IPv4' && !i.internal) console.log(`  On your phone:     http://${i.address}:${PORT}   (same Wi-Fi)`);
+    }
+  }
+  console.log('\nData is saved in movemycar.db and survives restarts.\n');
 });

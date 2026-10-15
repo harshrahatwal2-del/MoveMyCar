@@ -13,7 +13,10 @@
 
 // Where our Express server lives. Change this if you deploy the server
 // somewhere else later (e.g. a real URL instead of localhost).
-const API = 'http://localhost:4000';
+// When the page is served BY the backend (the normal prototype setup), API calls
+// go to the same address (''), so it works from a phone too. If you open the file
+// another way (Live Server on port 5500, or double-clicking it), fall back to localhost:4000.
+const API = (location.protocol === 'file:' || location.port === '5500') ? 'http://localhost:4000' : '';
 
 // Keeps track of the alert we just created, so the "track" screen
 // knows which one to poll.
@@ -106,7 +109,7 @@ const alertRow = a => {
     : `${timeAgo(Date.now() - a.createdAt)} · no reply yet`;
 
   return `
-    <div class="card p-4 flex items-center gap-3">
+    <div onclick="go('incoming', ${a.id})" class="card p-4 flex items-center gap-3 cursor-pointer">
       <span class="${iconColor}">${ic(icon, '!text-[30px]')}</span>
       <div class="flex-1">
         <b>${title}</b>
@@ -231,7 +234,6 @@ const S = {
 
       <div class="flex justify-between items-center pt-2">
         <h2 class="font-bold">Recent alerts</h2>
-        <button onclick="go('incoming')" class="text-teal text-sm font-semibold">Simulate incoming</button>
       </div>
       <!-- Alert cards get inserted here by loadAlerts() -->
       <div id="alertsList" class="space-y-3">
@@ -337,7 +339,8 @@ const S = {
         <div><b class="text-amb-d">Auto-call in <span id="esc2">04:15</span></b><p class="text-sm text-mute">If the car hasn't moved, the owner gets an automated phone call.</p></div>
       </section>
 
-      <button onclick="toast('Masked call needs the telephony backend')" class="btn bg-teal text-white">${ic('call')} Call owner (masked)</button>
+      <button id="shareOwner" class="btn bg-teal text-white">${ic('share')} Send alert link to the owner</button>
+      <p class="text-xs text-mute text-center -mt-2">No SMS yet in this prototype: share this link (e.g. on WhatsApp) so the owner can open and reply.</p>
       <button id="rem" disabled class="btn bg-slate-100 text-mute">Send gentle reminder</button>
 
       <div class="card p-4 flex items-center gap-3">
@@ -347,46 +350,89 @@ const S = {
     </main>`,
 
   incoming: () => `${head('cars')}
-    <main class="px-4 pt-5 space-y-4">
-      <div class="rounded-2xl bg-red-100 text-red-900 p-4">
-        <span class="text-xs font-bold">${ic('notifications_active', '!text-[18px]')} HIGH PRIORITY</span>
-        <h1 class="text-2xl font-bold mt-1">Your car <span class="mono">KA 01 MJ 8821</span> is blocking someone</h1>
-        <p class="text-sm mt-1">Received via verified SMS and WhatsApp. Reply needed.</p>
-      </div>
-
-      <section class="card p-4 space-y-3">
-        <div class="flex justify-between items-center">
-          <span class="text-xs font-bold bg-amb rounded-lg px-3 py-2">Blocking driveway / gate</span>
-          <span class="text-sm text-mute">${ic('schedule', '!text-[18px]')} 2 mins ago</span>
-        </div>
-        <div class="bg-slate-50 rounded-xl p-3 flex gap-3">
-          <span class="w-10 h-10 rounded-full bg-red-700 text-white grid place-items-center flex-none">${ic('medical_services', '!text-[20px]')}</span>
-          <p class="italic">"Need to take my mother to the hospital urgently, please move your vehicle."</p>
-        </div>
-        <p class="text-sm text-mute">${ic('location_on', '!text-[18px]')} 8th Main, 4th Block, Koramangala, Bengaluru</p>
-        <div class="grid grid-cols-2 gap-2">
-          <img src="${IMG.block}" class="h-28 w-full object-cover rounded-xl" alt="Proof photo">
-          <div class="h-28 rounded-xl bg-teal-l grid place-items-center text-teal-d text-sm font-bold">${ic('near_me')} Location confirmed</div>
-        </div>
-      </section>
-
-      <p class="text-sm bg-teal-l/50 rounded-xl p-3">${ic('shield', 'text-teal')} <b>Both sides stay private.</b> Replying now tells the driver instantly and avoids a police or towing escalation.</p>
-
-      <button onclick="reply('Coming down now')" class="btn bg-emerald-800 text-white">${ic('directions_run')} Coming down now (within 5 mins)</button>
-      <button onclick="reply('Coming in 10 mins')" class="btn bg-teal-d text-white">${ic('timer')} Coming in 10 mins</button>
-      <button onclick="reply('Custom note sent')" class="btn bg-slate-100 text-ink">${ic('chat')} Can't move right now</button>
-      <button onclick="toast('Masked call needs the telephony backend')" class="btn bg-white border border-line text-teal-d">${ic('call')} Call reporting driver (masked)</button>
-      <button onclick="toast('Report submitted');go('cars')" class="block mx-auto text-sm underline text-mute pt-2">Not my car / Report abuse</button>
+    <main id="incomingBody" class="px-4 pt-5 space-y-4">
+      <p class="text-mute text-sm px-1">Loading alert…</p>
     </main>`
 };
 
 
 /* ---------- 3. SCREEN LOGIC ---------- */
 
-// Called when the owner taps a quick-reply button on the "incoming" screen
-function reply(msg) {
-  toast(msg + '. Driver notified.');
-  setTimeout(() => go('cars'), 900);
+// Which alert the owner is looking at (set from the URL: #incoming/<id>)
+let currentIncomingId = null;
+
+// Builds the owner's view of one real alert, from the server's alert row.
+function incomingHTML(a) {
+  const replied = !!a.ownerReply;
+  return `
+    <div class="rounded-2xl bg-red-100 text-red-900 p-4">
+      <span class="text-xs font-bold">${ic('notifications_active', '!text-[18px]')} ${replied ? 'REPLIED' : 'REPLY NEEDED'}</span>
+      <h1 class="text-2xl font-bold mt-1">Your car <span class="mono">${fmt(a.plate)}</span> may be blocking someone</h1>
+    </div>
+
+    <section class="card p-4 space-y-3">
+      <div class="flex justify-between items-center gap-2">
+        <span class="text-xs font-bold bg-amb rounded-lg px-3 py-2">${a.urgency || 'Alert'}</span>
+        <span class="text-sm text-mute">${ic('schedule', '!text-[18px]')} ${timeAgo(Date.now() - a.createdAt)}</span>
+      </div>
+      ${a.note ? `<div class="bg-slate-50 rounded-xl p-3"><p class="italic">"${a.note}"</p></div>` : ''}
+    </section>
+
+    <p class="text-sm bg-teal-l/50 rounded-xl p-3">${ic('shield', 'text-teal')} <b>Both sides stay private.</b> Replying tells the driver instantly and avoids a police or towing escalation.</p>
+
+    ${replied
+      ? `<div class="card p-4 text-center"><b class="text-emerald-700">${ic('check_circle')} You replied: "${a.ownerReply}"</b><p class="text-sm text-mute mt-1">The driver can see this now.</p></div>`
+      : `<button data-reply="Coming down now (within 5 mins)" class="btn bg-emerald-800 text-white">${ic('directions_run')} Coming down now (within 5 mins)</button>
+         <button data-reply="Coming in 10 mins" class="btn bg-teal-d text-white">${ic('timer')} Coming in 10 mins</button>
+         <button data-reply="Can't move right now" class="btn bg-slate-100 text-ink">${ic('chat')} Can't move right now</button>
+         <button data-reply="Not my car" class="block mx-auto text-sm underline text-mute pt-2">Not my car</button>`}
+  `;
+}
+
+// Wires the reply buttons (they carry their message in a data-reply attribute,
+// which avoids quote-escaping problems with messages like "Can't move").
+function wireReplyButtons() {
+  document.querySelectorAll('[data-reply]').forEach(b => {
+    b.onclick = () => reply(b.dataset.reply);
+  });
+}
+
+// Loads the real alert, marks it "seen", and shows it.
+async function loadIncoming() {
+  const body = $('#incomingBody');
+  if (!currentIncomingId) {
+    body.innerHTML = `<p class="text-mute text-sm px-1">No alert selected. Open one from My Cars.</p>`;
+    return;
+  }
+  try {
+    // Tell the server the owner opened it (the reporter's tracker shows "Seen by owner").
+    const res = await fetch(`${API}/api/alerts/${currentIncomingId}/seen`, { method: 'POST' });
+    if (!res.ok) throw new Error('Alert not found');
+    const { alert } = await res.json();
+    body.innerHTML = incomingHTML(alert);
+    wireReplyButtons();
+  } catch (err) {
+    console.error(err);
+    body.innerHTML = `<p class="text-red-700 text-sm px-1">Could not load this alert. Is the server running on localhost:4000?</p>`;
+  }
+}
+
+// Sends the owner's reply to the server, then shows the confirmation.
+async function reply(msg) {
+  try {
+    const res = await fetch(`${API}/api/alerts/${currentIncomingId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    if (!res.ok) throw new Error('Reply failed');
+    const { alert } = await res.json();
+    $('#incomingBody').innerHTML = incomingHTML(alert);
+    toast('Reply sent. The driver can see it.');
+  } catch (err) {
+    console.error(err);
+    toast('Could not send your reply. Is the server running?');
+  }
 }
 
 // Formats raw typed text into "MH 02 AB 1234" as the user types
@@ -445,6 +491,10 @@ async function loadAlerts() {
 
 const init = {
 
+  incoming() {
+    loadIncoming();
+  },
+
   cars() {
     loadGarage(); // fire-and-forget: both update the screen once data arrives
     loadAlerts();
@@ -492,14 +542,9 @@ const init = {
 
         currentAlertId = data.alert.id; // remember it for the track screen
 
-        // Let the person know right away if the real SMS didn't go out —
-        // the alert itself is still saved either way, this is just visibility.
-        if (data.notification && !data.notification.sent) {
-          toast('Alert saved, but SMS not sent: ' + data.notification.reason);
-          timers.push(setTimeout(() => go('track'), 1600)); // give them a moment to read it
-        } else {
-          go('track');
-        }
+        // Straight to the tracker. (Real SMS is on hold in this prototype; the
+        // tracker's "Send alert link" button is how the owner gets notified.)
+        go('track', currentAlertId);
       } catch (err) {
         console.error(err);
         toast('Could not reach the server. Is it running on localhost:4000?');
@@ -569,6 +614,16 @@ const init = {
       return go('home');
     }
 
+    // Share the owner's link. On phones this opens the share sheet (WhatsApp etc.);
+    // on a computer it copies the link to the clipboard.
+    $('#shareOwner').onclick = async () => {
+      const link = location.href.split('#')[0] + '#incoming/' + currentAlertId;
+      try {
+        if (navigator.share) await navigator.share({ title: 'MoveMyCar alert', text: 'Your car may be blocking someone. Please reply:', url: link });
+        else { await navigator.clipboard.writeText(link); toast('Owner link copied. Send it to them.'); }
+      } catch (e) { /* user cancelled sharing */ }
+    };
+
     const li = [...document.querySelectorAll('#steps li')];
     // Maps the backend's status string to how many timeline steps to light up.
     const stepIndexFor = status => ({ sent: 0, delivered: 1, seen: 2, owner_responded: 3 }[status] ?? 0);
@@ -623,9 +678,14 @@ const init = {
 
 /* ---------- 4. THE ROUTER ---------- */
 
-// Swaps the visible screen. `route` is one of: home, cars, register, track, incoming
-function go(route) {
+// Swaps the visible screen. `route` is one of: home, cars, register, track, incoming.
+// `param` is an optional id carried in the URL, e.g. #track/5 or #incoming/5,
+// so a specific alert can be opened directly (and survives a page refresh).
+function go(route, param) {
   clearTimers();
+  if (route === 'track' && param) currentAlertId = Number(param);
+  if (route === 'incoming' && param) currentIncomingId = Number(param);
+
   $('#app').innerHTML = S[route]();
   init[route] && init[route]();
   scrollTo(0, 0);
@@ -636,8 +696,10 @@ function go(route) {
     `<button onclick="go('${t[0]}')" class="flex-1 flex flex-col items-center gap-0.5 py-1 text-xs font-semibold ${t[0] == activeTab ? 'text-teal' : 'text-mute'}">${ic(t[1])}${t[2]}</button>`
   ).join('');
 
-  history.replaceState(null, '', '#' + route);
+  const idForUrl = route === 'track' ? currentAlertId : route === 'incoming' ? currentIncomingId : null;
+  history.replaceState(null, '', '#' + route + (idForUrl ? '/' + idForUrl : ''));
 }
 
-// Start on whichever screen is in the URL's hash, or "home" by default
-go(S[location.hash.slice(1)] ? location.hash.slice(1) : 'home');
+// Start on whichever screen is in the URL's hash (e.g. "#incoming/3"), or "home" by default
+const [startRoute, startParam] = location.hash.slice(1).split('/');
+go(S[startRoute] ? startRoute : 'home', startParam);
